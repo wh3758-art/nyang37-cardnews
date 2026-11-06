@@ -1,0 +1,55 @@
+name: 카드 이미지 만들기
+
+# cards/ 에 새 카드가 올라오면 JPG 로 바꿔 images/ 에 저장합니다.
+# 저장소 변수 AUTO_POST 가 true 면 이어서 인스타그램에 바로 게시합니다.
+on:
+  push:
+    branches: [main]
+    paths: ["cards/**"]
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "카드 날짜 (예: 2026-11-06, 비우면 가장 최근)"
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 렌더링 도구 설치
+        run: |
+          sudo apt-get update -y && sudo apt-get install -y fonts-noto-cjk
+          pip install playwright==1.49.1
+          python -m playwright install --with-deps chromium
+
+      - name: 카드를 JPG 로 변환
+        id: render
+        run: |
+          python scripts/render.py "${{ github.event.inputs.date }}" | tee render.log
+          echo "date=$(grep '^DATE=' render.log | cut -d= -f2)" >> "$GITHUB_OUTPUT"
+
+      - name: 이미지 저장소에 올리기
+        id: commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add images
+          git diff --cached --quiet || git commit -m "카드 이미지 ${{ steps.render.outputs.date }}"
+          git push
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: 인스타그램 자동 게시 (AUTO_POST=true 일 때만)
+        if: ${{ vars.AUTO_POST == 'true' }}
+        env:
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+        run: python scripts/post_instagram.py "${{ steps.render.outputs.date }}" "${{ steps.commit.outputs.sha }}"

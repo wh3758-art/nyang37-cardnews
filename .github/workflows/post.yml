@@ -1,0 +1,33 @@
+name: 인스타그램 게시
+
+# 검토 후 게시용: GitHub 앱이나 웹의 Actions 탭에서 'Run workflow' 를 누르면 게시됩니다.
+on:
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "게시할 카드 날짜 (예: 2026-11-06, 비우면 가장 최근)"
+        required: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 게시할 날짜 정하기
+        id: pick
+        run: |
+          d="${{ github.event.inputs.date }}"
+          if [ -z "$d" ]; then d=$(ls images | sort | tail -n 1); fi
+          if [ ! -d "images/$d" ]; then echo "images/$d 가 없습니다. 먼저 '카드 이미지 만들기'가 끝났는지 확인하세요."; exit 1; fi
+          echo "date=$d" >> "$GITHUB_OUTPUT"
+
+      - name: 인스타그램에 캐러셀 게시
+        env:
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+        run: python scripts/post_instagram.py "${{ steps.pick.outputs.date }}" "$(git rev-parse HEAD)"
